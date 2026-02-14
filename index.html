@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ball Collection Game - Hand Tracking</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #000;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #gameContainer {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        /* Menu Setup */
+        #setupMenu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 320px;
+            z-index: 100;
+        }
+
+        #setupMenu h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+
+        #setupMenu label {
+            display: block;
+            margin-bottom: 10px;
+            color: #666;
+            font-size: 18px;
+        }
+
+        #ballCount {
+            width: 100px;
+            padding: 10px;
+            font-size: 24px;
+            text-align: center;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        #startButton {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #startButton:hover {
+            transform: scale(1.05);
+        }
+
+        #startButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Loading Status */
+        #loadingStatus {
+            margin-top: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        #loadingStatus.loading {
+            color: #667eea;
+        }
+
+        #loadingStatus.ready {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        #loadingStatus.error {
+            color: #f44336;
+        }
+
+        /* Score Display */
+        #scoreBoard {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            display: none;
+            justify-content: space-around;
+            padding: 0 20px;
+            z-index: 10;
+        }
+
+        .playerScore {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 30px;
+            border-radius: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .player1Score {
+            color: #00bfff;
+            border: 3px solid #00bfff;
+        }
+
+        .player2Score {
+            color: #ff1493;
+            border: 3px solid #ff1493;
+        }
+
+        /* Winner Display */
+        #winnerDisplay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px;
+            border-radius: 30px;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.4);
+            text-align: center;
+            display: none;
+            z-index: 100;
+        }
+
+        #winnerDisplay h2 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            animation: bounce 0.5s infinite alternate;
+        }
+
+        #winnerDisplay button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        @keyframes bounce {
+            from { transform: scale(1); }
+            to { transform: scale(1.1); }
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 10;
+            display: none;
+        }
+
+        #handDetectionStatus {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 10;
+            display: none;
+            font-size: 14px;
+        }
+
+        #handDetectionStatus.detecting {
+            display: block;
+            border: 2px solid #4CAF50;
+        }
+
+        #handDetectionStatus.no-hands {
+            display: block;
+            border: 2px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Hand Detection Status -->
+        <div id="handDetectionStatus" class="no-hands">
+            📏 Posisikan tangan 30-80cm dari kamera
+        </div>
+        
+        <!-- Setup Menu -->
+        <div id="setupMenu">
+            <h1>🎮 Ball Collection Game</h1>
+            <label for="ballCount">Jumlah Bola per Player:</label>
+            <input type="number" id="ballCount" min="3" max="20" value="8">
+            <br><br>
+            <button id="startButton" disabled>START GAME</button>
+            <p id="loadingStatus" class="loading">⏳ Menginisialisasi camera dan AI...</p>
+            <p style="margin-top: 15px; color: #999; font-size: 13px;">
+                👆 Gerakkan jari telunjuk di depan kamera<br>
+                Tangan Kanan = Player 1 (Biru) 🔵<br>
+                Tangan Kiri = Player 2 (Pink) 🔴<br>
+                <br>
+                <strong style="color: #667eea;">📏 Jarak Optimal: 30-80cm dari kamera</strong><br>
+                <small>Posisi jari akan dipetakan ke layar untuk menangkap bola</small>
+            </p>
+        </div>
+
+        <!-- Instructions -->
+        <div id="instructions">
+            <strong>👆 Gerakkan jari telunjuk untuk menangkap bola!</strong><br>
+            Tangan Kanan = Player 1 (Biru) | Tangan Kiri = Player 2 (Pink)
+        </div>
+
+        <!-- Score Board -->
+        <div id="scoreBoard">
+            <div class="playerScore player1Score">
+                PLAYER 1: <span id="p1Score">0</span>/<span id="p1Total">0</span>
+            </div>
+            <div class="playerScore player2Score">
+                PLAYER 2: <span id="p2Score">0</span>/<span id="p2Total">0</span>
+            </div>
+        </div>
+
+        <!-- Winner Display -->
+        <div id="winnerDisplay">
+            <h2 id="winnerText">PLAYER 1 WINNER!</h2>
+            <button id="playAgainButton">MAIN LAGI</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('videoElement');
+        const setupMenu = document.getElementById('setupMenu');
+        const scoreBoard = document.getElementById('scoreBoard');
+        const winnerDisplay = document.getElementById('winnerDisplay');
+        const startButton = document.getElementById('startButton');
+        const playAgainButton = document.getElementById('playAgainButton');
+        const ballCountInput = document.getElementById('ballCount');
+        const loadingStatus = document.getElementById('loadingStatus');
+        const instructions = document.getElementById('instructions');
+        const handDetectionStatus = document.getElementById('handDetectionStatus');
+
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Game state
+        let gameState = {
+            isRunning: false,
+            balls: [],
+            hands: [],
+            player1Score: 0,
+            player2Score: 0,
+            totalBalls: 8,
+            particles: [],
+            trails: [],
+            handsDetector: null,
+            cameraReady: false
+        };
+
+        // Particle class for collection effects
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 8;
+                this.vy = (Math.random() - 0.5) * 8;
+                this.life = 1.0;
+                this.color = color;
+                this.size = Math.random() * 15 + 10;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.3;
+                this.life -= 0.02;
+                this.size *= 0.95;
+            }
+
+            draw() {
+                if (this.life <= 0) return;
+                
+                ctx.globalAlpha = this.life;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // Trail class
+        class Trail {
+            constructor(x, y, color, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.life = 1.0;
+                this.size = 55;
+                this.vx = vx || 0;
+                this.vy = vy || 0;
+            }
+
+            update() {
+                this.x -= this.vx * 0.5;
+                this.y -= this.vy * 0.5;
+                this.life -= 0.02;
+                this.size *= 0.96;
+            }
+
+            draw() {
+                if (this.life <= 0) return;
+                
+                ctx.globalAlpha = this.life * 0.85;
+                
+                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 1.2);
+                gradient.addColorStop(0, this.color + 'FF');
+                gradient.addColorStop(0.25, this.color + 'DD');
+                gradient.addColorStop(0.5, this.color + '88');
+                gradient.addColorStop(0.75, this.color + '44');
+                gradient.addColorStop(1, this.color + '00');
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * 1.2, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, ' + (this.life * 0.95) + ')';
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * 0.2, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, ' + (this.life) + ')';
+                ctx.fill();
+                
+                ctx.globalAlpha = 1.0;
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // Ball class
+        class Ball {
+            constructor(type) {
+                this.type = type;
+                this.x = Math.random() * (canvas.width - 100) + 50;
+                this.y = Math.random() * (canvas.height - 200) + 100;
+                this.radius = 35;
+                this.vx = (Math.random() - 0.5) * 6;
+                this.vy = (Math.random() - 0.5) * 6;
+                this.color = type === 'player1' ? '#00bfff' : '#ff1493';
+                this.collected = false;
+                this.pulse = 0;
+                this.rotation = 0;
+            }
+
+            update() {
+                if (this.collected) return;
+
+                this.x += this.vx;
+                this.y += this.vy;
+                this.pulse += 0.1;
+                this.rotation += 0.05;
+
+                if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+                    this.vx *= -1;
+                    this.vx += (Math.random() - 0.5) * 0.5;
+                    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                }
+                if (this.y - this.radius < 0 || this.y + this.radius > canvas.height) {
+                    this.vy *= -1;
+                    this.vy += (Math.random() - 0.5) * 0.5;
+                    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+                }
+
+                const wobble = Math.sin(this.pulse) * 2;
+                this.x += wobble * 0.1;
+                this.y += Math.cos(this.pulse) * 0.1;
+            }
+
+            draw() {
+                if (this.collected) return;
+
+                const pulseSize = Math.sin(this.pulse) * 3;
+                const currentRadius = this.radius + pulseSize;
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = this.color + '40';
+                ctx.lineWidth = 6;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                const gradient = ctx.createRadialGradient(-8, -8, 0, 0, 0, currentRadius);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                gradient.addColorStop(0.5, this.color);
+                gradient.addColorStop(1, this.color + 'CC');
+
+                ctx.beginPath();
+                ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(-currentRadius * 0.3, -currentRadius * 0.3, currentRadius / 3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.fill();
+
+                for (let i = 0; i < 3; i++) {
+                    const angle = this.rotation + (i * Math.PI * 2 / 3);
+                    const sparkleX = Math.cos(angle) * currentRadius * 0.7;
+                    const sparkleY = Math.sin(angle) * currentRadius * 0.7;
+                    ctx.beginPath();
+                    ctx.arc(sparkleX, sparkleY, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            checkCollision(fingerX, fingerY) {
+                if (this.collected) return false;
+                const dist = Math.sqrt((fingerX - this.x) ** 2 + (fingerY - this.y) ** 2);
+                return dist < this.radius + 30;
+            }
+
+            collect() {
+                this.collected = true;
+                for (let i = 0; i < 20; i++) {
+                    gameState.particles.push(new Particle(this.x, this.y, this.color));
+                }
+            }
+        }
+
+        // Initialize MediaPipe Hands
+        async function initHandTracking() {
+            loadingStatus.textContent = '📹 Meminta akses camera...';
+            loadingStatus.className = 'loading';
+
+            try {
+                // Get camera access
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                
+                videoElement.srcObject = stream;
+                await videoElement.play();
+
+                loadingStatus.textContent = '🤖 Loading AI Model...';
+
+                // Initialize MediaPipe Hands
+                const hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.7
+                });
+
+                hands.onResults(onHandsDetected);
+
+                gameState.handsDetector = hands;
+
+                // Start detection loop
+                detectHands();
+
+                gameState.cameraReady = true;
+                loadingStatus.textContent = '✅ Siap! Klik START GAME';
+                loadingStatus.className = 'ready';
+                startButton.disabled = false;
+
+            } catch (err) {
+                loadingStatus.textContent = '❌ Error: ' + err.message;
+                loadingStatus.className = 'error';
+                console.error('Camera/Hand tracking error:', err);
+            }
+        }
+
+        // Detect hands continuously
+        async function detectHands() {
+            if (gameState.handsDetector && videoElement.readyState === 4) {
+                await gameState.handsDetector.send({ image: videoElement });
+            }
+            requestAnimationFrame(detectHands);
+        }
+
+        // Process hand detection results
+        function onHandsDetected(results) {
+            gameState.hands = [];
+
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                // Update status indicator
+                if (gameState.isRunning) {
+                    const numHands = results.multiHandLandmarks.length;
+                    if (numHands === 0) {
+                        handDetectionStatus.className = 'no-hands';
+                        handDetectionStatus.innerHTML = '📏 Posisikan tangan 30-80cm dari kamera';
+                    } else if (numHands === 1) {
+                        handDetectionStatus.className = 'detecting';
+                        handDetectionStatus.innerHTML = '✅ 1 Tangan Terdeteksi | 📏 Jarak: Optimal';
+                    } else {
+                        handDetectionStatus.className = 'detecting';
+                        handDetectionStatus.innerHTML = '✅ 2 Tangan Terdeteksi | 🎮 Siap Bermain!';
+                    }
+                }
+
+                results.multiHandLandmarks.forEach((landmarks, index) => {
+                    // Index finger tip is landmark 8
+                    const indexFingerTip = landmarks[8];
+                    
+                    // Convert normalized coordinates (0-1) to canvas coordinates
+                    // Flip X because video is mirrored
+                    const x = (1 - indexFingerTip.x) * canvas.width;
+                    const y = indexFingerTip.y * canvas.height;
+                    
+                    // Determine player based on hand side (left hand = player 1, right hand = player 2)
+                    // Use handedness from MediaPipe
+                    const handLabel = results.multiHandedness[index].label; // "Left" or "Right"
+                    
+                    // When video is mirrored: Right hand appears on left side
+                    const playerType = handLabel === 'Right' ? 'player1' : 'player2';
+                    const color = playerType === 'player1' ? '#00bfff' : '#ff1493';
+                    const player = playerType === 'player1' ? '1' : '2';
+                    
+                    // Store hand data with previous position for velocity tracking
+                    const handData = {
+                        x,
+                        y,
+                        playerType,
+                        color,
+                        player,
+                        landmarks,
+                        lastX: x,
+                        lastY: y
+                    };
+                    
+                    // Check if this hand was tracked before
+                    const existingHand = gameState.hands.find(h => h.playerType === playerType);
+                    if (existingHand) {
+                        handData.lastX = existingHand.x;
+                        handData.lastY = existingHand.y;
+                    }
+                    
+                    gameState.hands.push(handData);
+                });
+            } else {
+                // No hands detected
+                if (gameState.isRunning) {
+                    handDetectionStatus.className = 'no-hands';
+                    handDetectionStatus.innerHTML = '⚠️ Tidak ada tangan terdeteksi | 📏 Jarak: 30-80cm';
+                }
+            }
+        }
+
+        // Draw hands
+        function drawHands() {
+            // Draw divider line
+            const dashOffset = Date.now() / 30;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([20, 20]);
+            ctx.lineDashOffset = -dashOffset;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            gameState.hands.forEach((hand, index) => {
+                // Track for trails
+                if (!hand.lastX) {
+                    hand.lastX = hand.x;
+                    hand.lastY = hand.y;
+                }
+                
+                const vx = hand.x - hand.lastX;
+                const vy = hand.y - hand.lastY;
+                const speed = Math.sqrt(vx * vx + vy * vy);
+                
+                if (speed > 1) {
+                    const trailCount = Math.min(Math.floor(speed / 3) + 1, 3);
+                    for (let i = 0; i < trailCount; i++) {
+                        gameState.trails.push(new Trail(
+                            hand.x - vx * i * 0.3,
+                            hand.y - vy * i * 0.3,
+                            hand.color,
+                            vx,
+                            vy
+                        ));
+                    }
+                }
+                
+                hand.lastX = hand.x;
+                hand.lastY = hand.y;
+
+                // Draw pointer
+                const gradient = ctx.createRadialGradient(
+                    hand.x - 10, hand.y - 10, 0,
+                    hand.x, hand.y, 35
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                gradient.addColorStop(0.5, hand.color);
+                gradient.addColorStop(1, hand.color + 'DD');
+
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = hand.color;
+                ctx.beginPath();
+                ctx.arc(hand.x, hand.y, 32, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 6;
+                ctx.stroke();
+
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(hand.player, hand.x, hand.y);
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        // Update game
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState.isRunning) {
+                // Update and draw trails
+                gameState.trails = gameState.trails.filter(trail => {
+                    trail.update();
+                    trail.draw();
+                    return !trail.isDead();
+                });
+
+                // Update and draw balls
+                gameState.balls.forEach(ball => {
+                    ball.update();
+                    ball.draw();
+                });
+
+                // Update and draw particles
+                gameState.particles = gameState.particles.filter(particle => {
+                    particle.update();
+                    particle.draw();
+                    return !particle.isDead();
+                });
+
+                // Draw hands
+                drawHands();
+
+                // Check collisions
+                gameState.hands.forEach(hand => {
+                    gameState.balls.forEach(ball => {
+                        if (ball.type === hand.playerType && ball.checkCollision(hand.x, hand.y)) {
+                            ball.collect();
+                            
+                            ctx.globalAlpha = 0.3;
+                            ctx.fillStyle = hand.color;
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.globalAlpha = 1.0;
+                            
+                            if (hand.playerType === 'player1') {
+                                gameState.player1Score++;
+                                document.getElementById('p1Score').textContent = gameState.player1Score;
+                            } else {
+                                gameState.player2Score++;
+                                document.getElementById('p2Score').textContent = gameState.player2Score;
+                            }
+                            checkWinner();
+                        }
+                    });
+                });
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // Check winner
+        function checkWinner() {
+            if (gameState.player1Score >= gameState.totalBalls) {
+                endGame('PLAYER 1 WINNER! 🎉', '#00bfff');
+            } else if (gameState.player2Score >= gameState.totalBalls) {
+                endGame('PLAYER 2 WINNER! 🎉', '#ff1493');
+            }
+        }
+
+        // End game
+        function endGame(winnerText, color) {
+            gameState.isRunning = false;
+            document.getElementById('winnerText').textContent = winnerText;
+            document.getElementById('winnerText').style.color = color;
+            winnerDisplay.style.display = 'block';
+            instructions.style.display = 'none';
+        }
+
+        // Start game
+        async function startGame() {
+            gameState.totalBalls = parseInt(ballCountInput.value) || 8;
+            gameState.player1Score = 0;
+            gameState.player2Score = 0;
+            gameState.balls = [];
+            gameState.particles = [];
+            gameState.trails = [];
+
+            // Create balls
+            for (let i = 0; i < gameState.totalBalls; i++) {
+                gameState.balls.push(new Ball('player1'));
+                gameState.balls.push(new Ball('player2'));
+            }
+
+            // Update UI
+            document.getElementById('p1Score').textContent = '0';
+            document.getElementById('p2Score').textContent = '0';
+            document.getElementById('p1Total').textContent = gameState.totalBalls;
+            document.getElementById('p2Total').textContent = gameState.totalBalls;
+
+            setupMenu.classList.add('hidden');
+            scoreBoard.style.display = 'flex';
+            instructions.style.display = 'block';
+            winnerDisplay.style.display = 'none';
+
+            gameState.isRunning = true;
+        }
+
+        // Button handlers
+        startButton.addEventListener('click', startGame);
+        playAgainButton.addEventListener('click', () => {
+            setupMenu.classList.remove('hidden');
+            scoreBoard.style.display = 'none';
+            instructions.style.display = 'none';
+            winnerDisplay.style.display = 'none';
+        });
+
+        // Start rendering
+        update();
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            initHandTracking();
+        });
+    </script>
+</body>
+</html>
